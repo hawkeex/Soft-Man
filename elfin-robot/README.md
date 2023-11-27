@@ -2,7 +2,7 @@ Elfin-S Robot
 ======
 
 
-Chinese version of the README -> please [click here](./README_cn.md)
+Chinese version of the README -> please [click here](README_cn.md)
 
 
 <p align="center">
