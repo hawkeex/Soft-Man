@@ -236,10 +236,9 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
           for x in range(width):
                 if mask[y, x] == 0:
                  depth_array[y, x] = 0
-    print('1')
     # create target point cloud from the masked depth image
     target_pcd = o3d.geometry.PointCloud.create_from_depth_image(rgbd_image.depth, camera_intrinsic)
-
+    #target_pcd = target_pcd.voxel_down_sample(0.05)
     # point cloud clustering
     with o3d.utility.VerbosityContextManager(
             o3d.utility.VerbosityLevel.Debug) as cm:
@@ -253,7 +252,7 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
     target_pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
 
     # visualize the target point cloud
-    #o3d.visualization.draw_geometries([target_pcd])
+    o3d.visualization.draw_geometries([target_pcd])
 
     return target_pcd
 
@@ -274,6 +273,11 @@ def get_target_center(depth_image, rgb_image, masks):
     target_pcd_center = target_pcd.get_center()
 
     print("target_pcd_center:", target_pcd_center)
+    center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.002)
+    center_marker.translate(target_pcd_center)
+    center_marker.paint_uniform_color([1,0,0]) #red
+    # Visualize the point cloud and the center marker
+    o3d.visualization.draw_geometries([target_pcd, center_marker], window_name="Point Cloud with Center")
 
     return target_pcd_center
 
@@ -295,6 +299,5 @@ if __name__ == '__main__':
 
     # run object targeting
     target_pcd_center = get_target_center(depth_image, rgb_image, masks)
-
 
 
