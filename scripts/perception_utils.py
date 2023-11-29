@@ -316,7 +316,7 @@ if __name__ == '__main__':
     # run object detection
     masks, boxes = detect(text, rgb_image)
 
-    # run object targeting
+    # run object center targeting
     target_pcd_center = get_target_center(depth_image, rgb_image, masks)
 
 
