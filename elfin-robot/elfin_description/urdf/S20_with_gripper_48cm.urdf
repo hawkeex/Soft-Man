@@ -118,10 +118,56 @@
       <mechanicalReduction>1</mechanicalReduction>
     </actuator>
   </transmission>
-  <link name="world"/>
-  <joint name="world_base" type="fixed">
+  <link name="world_base0">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.05"/>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+      <material name="">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="world_base0" type="prismatic">
     <origin rpy="0 0 0" xyz="0 0 0"/>
-    <parent link="world"/>
+    <parent link="world_base0"/>
+    <child link="world_base1"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-5" upper="5"/>
+  </joint>
+  <link name="world_base1">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.05"/>
+      <geometry>
+        <box size="0.1 0.1 0.1"/>
+      </geometry>
+      <material name="">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="world_base1" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="world_base1"/>
+    <child link="world_base2"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-5" upper="5"/>
+  </joint>
+  <link name="world_base2">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.65"/>
+      <geometry>
+        <box size="0.3 0.3 1.3"/>
+      </geometry>
+      <material name="">
+        <color rgba="1 1 1 1"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="world_base2" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 1.3"/>
+    <parent link="world_base2"/>
     <child link="elfin_base_link"/>
   </joint>
   <link name="elfin_base_link"/>
