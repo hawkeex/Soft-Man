@@ -1,10 +1,12 @@
 import os
+import rospy
 import copy
 import torch
+import cv_bridge
+import sensor_msgs
 import gc
 import open3d as o3d
 from PIL import Image, ImageDraw, ImageFont
-import csv
 
 # OwlViT Detection
 from transformers import OwlViTProcessor, OwlViTForObjectDetection
@@ -207,7 +209,7 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
     color_array = np.asarray(rgbd_image.color)
     depth_array = np.asarray(rgbd_image.depth)
 
-    # assert the size of color image and depth image are both 848*480, otherwise through an error
+    # assert the size of color image and depth image are both 1280*720, otherwise through an error
     assert color_array.shape[0] == depth_array.shape[0] and color_array.shape[1] == depth_array.shape[1], "The size of color image and depth image are not the same."
 
     # show rgbd image and point cloud
@@ -226,7 +228,7 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
     pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, camera_intrinsic)
 
     # visualize the point cloud
-    #o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries([pcd])
 
     # mask the target object in depth image
     width, height = depth_array.shape[1], depth_array.shape[0]
@@ -240,19 +242,19 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
     target_pcd = o3d.geometry.PointCloud.create_from_depth_image(rgbd_image.depth, camera_intrinsic)
     #target_pcd = target_pcd.voxel_down_sample(0.05)
     # point cloud clustering
-    with o3d.utility.VerbosityContextManager(
-            o3d.utility.VerbosityLevel.Debug) as cm:
-        labels = np.array(
-            target_pcd.cluster_dbscan(eps=0.02, min_points=10, print_progress=True))
+    #with o3d.utility.VerbosityContextManager(
+    #        o3d.utility.VerbosityLevel.Debug) as cm:
+    #    labels = np.array(
+    #        target_pcd.cluster_dbscan(eps=0.02, min_points=10, print_progress=True))
 
-    max_label = labels.max()
-    print(f"point cloud has {max_label + 1} clusters")
-    colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
-    colors[labels < 0] = 0
-    target_pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+    #max_label = labels.max()
+    #print(f"point cloud has {max_label + 1} clusters")
+    #colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+    #colors[labels < 0] = 0
+    #target_pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
 
     # visualize the target point cloud
-    o3d.visualization.draw_geometries([target_pcd])
+    #o3d.visualization.draw_geometries([target_pcd])
 
     return target_pcd
 
@@ -273,7 +275,7 @@ def get_target_center(depth_image, rgb_image, masks):
     target_pcd_center = target_pcd.get_center()
 
     print("target_pcd_center:", target_pcd_center)
-    center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.002)
+    center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
     center_marker.translate(target_pcd_center)
     center_marker.paint_uniform_color([1,0,0]) #red
     # Visualize the point cloud and the center marker
@@ -281,16 +283,33 @@ def get_target_center(depth_image, rgb_image, masks):
 
     return target_pcd_center
 
+def get_rgbd_image_and_camera_intrinsic():
+    rospy.init_node("get_image")
+    bridge = cv_bridge.CvBridge()
 
+    #get rgb image
+    print("Getting RGB image......")
+    rgb_image = rospy.wait_for_message("/camera/color/image_raw", sensor_msgs.msg.Image)
+    rgb_image = bridge.imgmsg_to_cv2(rgb_image,"rgb8")
+    rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
+    cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/rgb_image/rgb_img.png", rgb_image)
+    rospy.loginfo("RGB image saved.")
+
+    #get depth image
+    depth_image = rospy.wait_for_message("/camera/aligned_depth_to_color/image_raw", sensor_msgs.msg.Image)
+    print("Getting Depth image......")
+    depth_image = bridge.imgmsg_to_cv2(depth_image, desired_encoding="passthrough")
+    cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/depth_image/depth_img.png", depth_image)
+    rospy.loginfo("Depth image saved.")
 def reconstruct():
     pass
 
 
 if __name__ == '__main__':
-
     # input text prompt and image
-    rgb_image = "/home/eggsy/Soft-Man/dataset/rgb/out/001_Color.png"
-    depth_image = "/home/eggsy/Soft-Man/dataset/depth/out/001_Depth.png"
+    get_rgbd_image_and_camera_intrinsic()
+    rgb_image = "/home/eggsy/Soft-Man/dataset/assets/rgb_image/rgb_img.png"
+    depth_image = "/home/eggsy/Soft-Man/dataset/assets/depth_image/depth_img.png"
     # text = input("Please input your query: ")
     text = "white bag"
 
