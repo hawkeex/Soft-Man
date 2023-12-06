@@ -192,6 +192,7 @@ def detect(text_prompt, rgb_image):
     return masks, boxes
 
 
+
 def create_target_pointcloud(depth_image, rgb_image, mask):
     '''
     Create the point cloud of target object given the RGB-D image and the mask.
@@ -232,7 +233,7 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
 
     # mask the target object in depth image
     width, height = depth_array.shape[1], depth_array.shape[0]
-    print(width, height)
+    print("image width and height:", width, height)
     mask = mask.squeeze(0).numpy()
     for y in range(height):
           for x in range(width):
@@ -256,8 +257,46 @@ def create_target_pointcloud(depth_image, rgb_image, mask):
     # visualize the target point cloud
     #o3d.visualization.draw_geometries([target_pcd])
 
-    return target_pcd
+    return target_pcd, pcd
 
+
+def normalize_vector(v):
+    """Normalize a vector."""
+    norm = np.linalg.norm(v)
+    if norm == 0:
+        return v
+    return v / norm
+
+def rotation_matrix_from_normal(normal):
+    """Generate a 3x3 rotation matrix from a normal vector."""
+    normal = normalize_vector(normal)
+
+    # Check if the normal vector is already aligned with the z-axis
+    if np.allclose(normal, [0, 0, 1]):
+        return np.identity(3)
+
+    # Calculate the rotation axis using cross product
+    rotation_axis = np.cross([0, 0, 1], normal)
+    rotation_axis = normalize_vector(rotation_axis)
+
+    # Calculate the rotation angle using dot product
+    rotation_angle = np.arccos(np.dot([0, 0, 1], normal))
+
+    # Generate the rotation matrix using the axis-angle representation
+    c = np.cos(rotation_angle)
+    s = np.sin(rotation_angle)
+    t = 1 - c
+
+    rotation_matrix = np.array([
+        [t * rotation_axis[0] ** 2 + c, t * rotation_axis[0] * rotation_axis[1] - s * rotation_axis[2],
+         t * rotation_axis[0] * rotation_axis[2] + s * rotation_axis[1]],
+        [t * rotation_axis[0] * rotation_axis[1] + s * rotation_axis[2], t * rotation_axis[1] ** 2 + c,
+         t * rotation_axis[1] * rotation_axis[2] - s * rotation_axis[0]],
+        [t * rotation_axis[0] * rotation_axis[2] - s * rotation_axis[1],
+         t * rotation_axis[1] * rotation_axis[2] + s * rotation_axis[0], t * rotation_axis[2] ** 2 + c]
+    ])
+
+    return rotation_matrix
 
 def get_target_center(depth_image, rgb_image, masks):
     '''
@@ -269,19 +308,62 @@ def get_target_center(depth_image, rgb_image, masks):
     '''
 
     # create target point cloud from depth image with a mask
-    target_pcd = create_target_pointcloud(depth_image, rgb_image, masks[0])
+    target_pcd, pcd = create_target_pointcloud(depth_image, rgb_image, masks[0])
 
     # calculate the center of the target point cloud
     target_pcd_center = target_pcd.get_center()
 
     print("target_pcd_center:", target_pcd_center)
-    center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+    center_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.03)
     center_marker.translate(target_pcd_center)
-    center_marker.paint_uniform_color([1,0,0]) #red
-    # Visualize the point cloud and the center marker
-    o3d.visualization.draw_geometries([target_pcd, center_marker], window_name="Point Cloud with Center")
+    center_marker.paint_uniform_color([1, 0, 0]) #red
 
-    return target_pcd_center
+    # Visualize the point cloud and the center marker
+    o3d.io.write_point_cloud("/home/eggsy/Soft-Man/experiment/Round1/whole_pcd.ply", pcd, write_ascii=False, compressed=False, print_progress=False)
+    o3d.io.write_point_cloud("/home/eggsy/Soft-Man/experiment/Round1/target_pcd.ply", target_pcd, write_ascii=False, compressed=False, print_progress=False)
+    o3d.visualization.draw_geometries([pcd, center_marker], window_name="Point Cloud with Center")
+
+    # Find PCD center's nearest point on PCD
+    target_pcd_tree = o3d.geometry.KDTreeFlann(target_pcd)
+    print("Calculating the nearest point on mesh......")
+    center_mesh = target_pcd_tree.search_knn_vector_3d(target_pcd_center, 1)
+    num_points_found, indices, distances = center_mesh
+    mesh_marker_coords = np.asarray(target_pcd.points)[indices[0]]
+    mesh_marker = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+    mesh_marker.translate(mesh_marker_coords)
+    mesh_marker.paint_uniform_color([1, 0, 0]) #blue
+    print("grasp point on mesh is:", mesh_marker_coords)
+
+    # Find grasp point's normal vector
+    target_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30)) #unit:cm
+    o3d.geometry.PointCloud.orient_normals_towards_camera_location(target_pcd, camera_location=np.array([0, 0, 0]))
+    FOR1 = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=[0, 0, 0])
+    FOR2 = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=mesh_marker_coords)
+    NOR = o3d.geometry.TriangleMesh.create_arrow(cylinder_radius=0.005, cone_radius=0.015, cylinder_height=0.07, cone_height=0.04, resolution=20, cylinder_split=4, cone_split=1)
+    NOR.translate(mesh_marker_coords)
+    normal_vec = -1 * target_pcd.normals[indices[0]]
+    R = rotation_matrix_from_normal(normal_vec)
+    NOR.rotate(R, center=mesh_marker_coords)
+    NOR.paint_uniform_color([0, 0, 1])
+    FOR2.rotate(R, center=mesh_marker_coords)
+
+    # Given the Transformation Matrix
+    R = np.array([[R[0][0], R[0][1], R[0][2], 0],
+                     [R[1][0], R[1][1], R[1][2], 0],
+                     [R[2][0], R[2][1], R[2][2], 0],
+                     [0, 0, 0, 1]])
+    Translation_matrix = np.array([
+        [1, 0, 0, mesh_marker_coords[0]],
+        [0, 1, 0, mesh_marker_coords[1]],
+        [0, 0, 1, mesh_marker_coords[2]],
+        [0, 0, 0, 1]
+    ])
+    Transformation_matrix = np.dot(Translation_matrix, R)
+    print("Transformation Matrix from Camera Frame:", Transformation_matrix)
+    #print("grasp pose:", mesh_marker_coords, R, "frame: camera")
+    o3d.visualization.draw_geometries([NOR, FOR1, pcd, FOR2, mesh_marker], window_name="Point Cloud with Point on Mesh", point_show_normal=True)
+
+    return target_pcd_center, mesh_marker_coords
 
 def get_rgbd_image_and_camera_intrinsic():
     rospy.init_node("get_image")
@@ -292,14 +374,16 @@ def get_rgbd_image_and_camera_intrinsic():
     rgb_image = rospy.wait_for_message("/camera/color/image_raw", sensor_msgs.msg.Image)
     rgb_image = bridge.imgmsg_to_cv2(rgb_image,"rgb8")
     rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
-    cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/rgb_image/rgb_img.png", rgb_image)
+    #cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/rgb_image/rgb_img.png", rgb_image)
+    cv2.imwrite("/home/eggsy/Soft-Man/experiment/Round1/rgb_img.png", rgb_image)
     rospy.loginfo("RGB image saved.")
 
     #get depth image
     depth_image = rospy.wait_for_message("/camera/aligned_depth_to_color/image_raw", sensor_msgs.msg.Image)
     print("Getting Depth image......")
     depth_image = bridge.imgmsg_to_cv2(depth_image, desired_encoding="passthrough")
-    cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/depth_image/depth_img.png", depth_image)
+    #cv2.imwrite("/home/eggsy/Soft-Man/dataset/assets/depth_image/depth_img.png", depth_image)
+    cv2.imwrite("/home/eggsy/Soft-Man/experiment/Round1/depth_img.png", depth_image)
     rospy.loginfo("Depth image saved.")
 def reconstruct():
     pass
@@ -307,9 +391,9 @@ def reconstruct():
 
 if __name__ == '__main__':
     # input text prompt and image
-    get_rgbd_image_and_camera_intrinsic()
-    rgb_image = "/home/eggsy/Soft-Man/dataset/assets/rgb_image/rgb_img.png"
-    depth_image = "/home/eggsy/Soft-Man/dataset/assets/depth_image/depth_img.png"
+    #get_rgbd_image_and_camera_intrinsic()
+    rgb_image = "/home/eggsy/Soft-Man/experiment/Round1/rgb_img.png"
+    depth_image = "/home/eggsy/Soft-Man/experiment/Round1/depth_img.png"
     # text = input("Please input your query: ")
     text = "white bag"
 
